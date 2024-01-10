@@ -1,4 +1,5 @@
 import argparse
+import logging
 import json
 import math
 import os
@@ -31,7 +32,7 @@ def get_job_links(workflow_run_id, token=None):
 
         return job_links
     except Exception as e:
-        print(f"Unknown error, could not fetch links:\n{traceback.format_exc()}")
+        logging.error("Unknown error, could not fetch links:", exc_info=True)
         raise e
 
 
@@ -261,8 +262,9 @@ if __name__ == "__main__":
     for item in most_common:
         print(item)
 
-    with open(os.path.join(args.output_dir, "errors.json"), "w", encoding="UTF-8") as fp:
-        json.dump(errors, fp, ensure_ascii=False, indent=4)
+    error_logs_file_path = os.path.join(args.output_dir, "error_logs.json")
+    with open(error_logs_file_path, "w", encoding="UTF-8") as fp:
+        json.dump(errors,fp,indent=2,ensure_ascii=False)
 
     reduced_by_error = reduce_by_error(errors)
     reduced_by_model = reduce_by_model(errors)
