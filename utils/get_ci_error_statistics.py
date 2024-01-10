@@ -1,4 +1,5 @@
 import argparse
+import logging
 import json
 import math
 import os
@@ -31,7 +32,7 @@ def get_job_links(workflow_run_id, token=None):
 
         return job_links
     except Exception as e:
-        print(f"Unknown error, could not fetch links:\n{traceback.format_exc()}")
+        logging.error("Unknown error, could not fetch links:", exc_info=True)
         raise e
 
 
