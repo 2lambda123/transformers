@@ -30,10 +30,9 @@ def get_job_links(workflow_run_id, token=None):
             job_links.update({job["name"]: job["html_url"] for job in result["jobs"]})
 
         return job_links
-    except Exception:
+    except Exception as e:
         print(f"Unknown error, could not fetch links:\n{traceback.format_exc()}")
-
-    return {}
+        raise e
 
 
 def get_artifacts_links(worflow_run_id, token=None):
@@ -251,6 +250,30 @@ if __name__ == "__main__":
         # Be gentle to GitHub
         time.sleep(1)
 
+    errors = get_all_errors(args.output_dir, job_links=job_links)
+
+    # `e[1]` is the error
+    counter = Counter()
+    counter.update([e[1] for e in errors])
+
+    # print the top 30 most common test errors
+    most_common = counter.most_common(30)
+    for item in most_common:
+        print(item)
+
+    with open(os.path.join(args.output_dir, "errors.json"), "w", encoding="UTF-8") as fp:
+        json.dump(errors, fp, ensure_ascii=False, indent=4)
+
+    reduced_by_error = reduce_by_error(errors)
+    reduced_by_model = reduce_by_model(errors)
+
+    s1 = make_github_table(reduced_by_error)
+    s2 = make_github_table_per_model(reduced_by_model)
+
+    with open(os.path.join(args.output_dir, "reduced_by_error.txt"), "w", encoding="UTF-8") as fp:
+        fp.write(s1)
+    with open(os.path.join(args.output_dir, "reduced_by_model.txt"), "w", encoding="UTF-8") as fp:
+        fp.write(s2)
     errors = get_all_errors(args.output_dir, job_links=job_links)
 
     # `e[1]` is the error
