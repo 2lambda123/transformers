@@ -1,7 +1,7 @@
 import argparse
 import json
 import math
-from error_logger import log_errors
+from error_statistics import *
 import os
 import time
 import traceback
