@@ -1,7 +1,6 @@
 import argparse
 import json
 import math
-from error_statistics import *
 import os
 import time
 import traceback
@@ -12,8 +11,6 @@ import requests
 
 
 def get_job_links(workflow_run_id, token=None):
-    """Extract job names and their job links in a GitHub Actions workflow run"""
-
     headers = None
     if token is not None:
         headers = {"Accept": "application/vnd.github+json", "Authorization": f"Bearer {token}"}
@@ -37,14 +34,12 @@ def get_job_links(workflow_run_id, token=None):
     return {}
 
 
-def get_artifacts_links(worflow_run_id, token=None):
-    """Get all artifact links from a workflow run"""
-
+def get_artifacts_links(workflow_run_id, token=None):
     headers = None
     if token is not None:
         headers = {"Accept": "application/vnd.github+json", "Authorization": f"Bearer {token}"}
 
-    url = f"https://api.github.com/repos/huggingface/transformers/actions/runs/{worflow_run_id}/artifacts?per_page=100"
+    url = f"https://api.github.com/repos/huggingface/transformers/actions/runs/{workflow_run_id}/artifacts?per_page=100"
     result = requests.get(url, headers=headers).json()
     artifacts = {}
 
@@ -64,12 +59,6 @@ def get_artifacts_links(worflow_run_id, token=None):
 
 
 def download_artifact(artifact_name, artifact_url, output_dir, token):
-    """Download a GitHub Action artifact from a URL.
-
-    The URL is of the form `https://api.github.com/repos/huggingface/transformers/actions/artifacts/{ARTIFACT_ID}/zip`,
-    but it can't be used to download directly. We need to get a redirect URL first.
-    See https://docs.github.com/en/rest/actions/artifacts#download-an-artifact
-    """
     headers = None
     if token is not None:
         headers = {"Accept": "application/vnd.github+json", "Authorization": f"Bearer {token}"}
@@ -83,7 +72,6 @@ def download_artifact(artifact_name, artifact_url, output_dir, token):
 
 
 def get_errors_from_single_artifact(artifact_zip_path, job_links=None):
-    """Extract errors from a downloaded artifact (in .zip format)"""
     errors = []
     failed_tests = []
     job_name = None
@@ -91,47 +79,36 @@ def get_errors_from_single_artifact(artifact_zip_path, job_links=None):
     with zipfile.ZipFile(artifact_zip_path) as z:
         for filename in z.namelist():
             if not os.path.isdir(filename):
-                # read the file
                 if filename in ["failures_line.txt", "summary_short.txt", "job_name.txt"]:
                     with z.open(filename) as f:
                         for line in f:
                             line = line.decode("UTF-8").strip()
                             if filename == "failures_line.txt":
                                 try:
-                                    # `error_line` is the place where `error` occurs
                                     error_line = line[: line.index(": ")]
                                     error = line[line.index(": ") + len(": ") :]
                                     errors.append([error_line, error])
                                 except Exception:
-                                    # skip un-related lines
                                     pass
                             elif filename == "summary_short.txt" and line.startswith("FAILED "):
-                                # `test` is the test method that failed
                                 test = line[len("FAILED ") :]
                                 failed_tests.append(test)
                             elif filename == "job_name.txt":
                                 job_name = line
 
     if len(errors) != len(failed_tests):
-        raise ValueError(
-            f"`errors` and `failed_tests` should have the same number of elements. Got {len(errors)} for `errors` "
-            f"and {len(failed_tests)} for `failed_tests` instead. The test reports in {artifact_zip_path} have some"
-            " problem."
-        )
+        raise ValueError("Errors and failed_tests should have the same number of elements.")
 
     job_link = None
     if job_name and job_links:
         job_link = job_links.get(job_name, None)
 
-    # A list with elements of the form (line of error, error, failed test)
     result = [x + [y] + [job_link] for x, y in zip(errors, failed_tests)]
 
     return result
 
 
 def get_all_errors(artifact_dir, job_links=None):
-    """Extract errors from all artifact files"""
-
     errors = []
 
     paths = [os.path.join(artifact_dir, p) for p in os.listdir(artifact_dir) if p.endswith(".zip")]
@@ -142,8 +119,6 @@ def get_all_errors(artifact_dir, job_links=None):
 
 
 def reduce_by_error(logs, error_filter=None):
-    """count each error"""
-
     counter = Counter()
     counter.update([x[1] for x in logs])
     counts = counter.most_common()
@@ -156,20 +131,7 @@ def reduce_by_error(logs, error_filter=None):
     return r
 
 
-def get_model(test):
-    """Get the model name from a test method"""
-    test = test.split("::")[0]
-    if test.startswith("tests/models/"):
-        test = test.split("/")[2]
-    else:
-        test = None
-
-    return test
-
-
 def reduce_by_model(logs, error_filter=None):
-    """count each error per model"""
-
     logs = [(x[0], x[1], get_model(x[2])) for x in logs]
     logs = [x for x in logs if x[2] is not None]
     tests = {x[2] for x in logs}
@@ -177,7 +139,6 @@ def reduce_by_model(logs, error_filter=None):
     r = {}
     for test in tests:
         counter = Counter()
-        # count by errors in `test`
         counter.update([x[1] for x in logs if x[2] == test])
         counts = counter.most_common()
         error_counts = {error: count for error, count in counts if (error_filter is None or error not in error_filter)}
@@ -216,7 +177,6 @@ def make_github_table_per_model(reduced_by_model):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    # Required parameters
     parser.add_argument("--workflow_run_id", type=str, required=True, help="A GitHub Actions workflow run id.")
     parser.add_argument(
         "--output_dir",
@@ -231,11 +191,8 @@ if __name__ == "__main__":
 
     _job_links = get_job_links(args.workflow_run_id, token=args.token)
     job_links = {}
-    # To deal with `workflow_call` event, where a job name is the combination of the job names in the caller and callee.
-    # For example, `PyTorch 1.11 / Model tests (models/albert, single-gpu)`.
     if _job_links:
         for k, v in _job_links.items():
-            # This is how GitHub actions combine job names.
             if " / " in k:
                 index = k.find(" / ")
                 k = k[index + len(" / ") :]
@@ -249,16 +206,13 @@ if __name__ == "__main__":
 
     for idx, (name, url) in enumerate(artifacts.items()):
         download_artifact(name, url, args.output_dir, args.token)
-        # Be gentle to GitHub
         time.sleep(1)
 
     errors = get_all_errors(args.output_dir, job_links=job_links)
 
-    # `e[1]` is the error
     counter = Counter()
     counter.update([e[1] for e in errors])
 
-    # print the top 30 most common test errors
     most_common = counter.most_common(30)
     for item in most_common:
         print(item)
